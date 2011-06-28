@@ -42,10 +42,15 @@ case class VarSet(name: String) extends Term {
   override def toString = name
 }
 
-case class VarRuleDef(override val name: String, ctr: Ctr) extends Rule(name, ctr) {
+//case class VarRuleDef(override val name: String, ctr: Ctr) extends Rule(name, ctr) {
+case class VarRuleDef(name: String, ctr: Ctr) {
   override def toString = name + " = " + ctr + ";"
 }
 
 case class Rule(name: String, term: Term) {
   override def toString = name + " = " + term + ";"
+}
+
+case class RuleName(name: String) extends Term {
+  override def toString = name
 }

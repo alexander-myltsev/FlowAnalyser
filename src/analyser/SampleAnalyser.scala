@@ -65,17 +65,14 @@ object SamplesForInterpreter {
 }
 
 object SampleAnalyser {
-  val inputRule =
+  val inputRule = """
+R0 = gAdd(V0, Z());
 """
-R0 = gAdd(V0, S(Z()));
-"""
-  val varRules =
-"""
-V0 = Z();
+  val varRules = """
+V0 = S(S(Z()));
 V0 = S(V0);
 """
-  val program =
-"""
+  val program = """
 gAdd(S(x), y) = gAdd(x, S(y));
 gAdd(Z(), y) = y;
 """
@@ -89,8 +86,12 @@ gAdd(Z(), y) = y;
     val inputRule = SParsers.parseRule(inputRuleText)
     val variableRules = SParsers.parseVarRules(variableRulesText)
     val analyser = new Analyser(program)
-    val pt = analyser.analyze(immutable.Stack(inputRule), variableRules, List[Rule]())
-    println(pt)
+    val (rules, varRules) = analyser.analyze(immutable.Stack(inputRule), variableRules, List[Rule]())
+    println("------------- result -------------")
+    println("List of rules:\n" + (rules :\ "") { case (r, s) => r + "\n" + s })
+    println("----------------------------------")
+    println("List of var rules:\n" + (varRules :\ "") { case (r, s) => r + "\n" + s })
+    println()
   }
 
   def runInterpreter(targetText: String, programText: String) = {
