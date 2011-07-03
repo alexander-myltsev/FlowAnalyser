@@ -3,193 +3,160 @@ package analyser
 import scala.collection.immutable._
 import spsc._
 import spsc.Algebra._
+import Analyser._
 
-/*
-case class Domain(start: Ctr, prod: Ctr) extends Term {
-
-}
-*/
-
-class Analyser(prog: Program) {
-  def interpret(e: Term): Term = e match {
-    case c: Ctr => c
-    //case v: Var => v
-    case gcall @ GCall(name, (ctr: Ctr) :: rest) =>
-      val gfuns = prog.gs(name)
-      val gfun = gfuns.find(_.p.name == ctr.name).get
-      val subst_list = (gfun.p.args zip ctr.args) ::: (gfun.args zip rest)
-      val subst = (subst_list :\ Map[Var, Term]()) { case ((v, t), m) => m + (v -> t) }
-
-      def replace(e: Term): Term = e match {
-        case v: Var => subst.getOrElse(v, v)
-        case c: Ctr => Ctr(c.name, c.args.map(replace(_)))
-        case gc: GCall => GCall(gc.name, gc.args.map(replace(_)))
-      }
-
-      val gc = interpret(replace(gfun.term))
-      //println(gc)
-      gc
-    case GCall(name, (arg: GCall) :: rest) =>
-      val r = interpret(arg)
-      val gc = interpret(GCall(name, r :: rest))
-      //println(gc)
-      gc
-  }
-
-  // ---------------------------------------
-
-  var indexOfRule = 0
-  def getNewNameOfRule: String = { indexOfRule += 1; "R" + indexOfRule }
-
-  var indexOfVarRule = 0
-  def getNewNameOfVarRule: String = { indexOfVarRule += 1; "V" + indexOfVarRule }
-
-  def makeVarRuleDef(gfun: GFun, variableRulesDefs: List[VarRuleDef]): VarRuleDef = {
-    val name = getNewNameOfVarRule
-    val vrd = variableRulesDefs.filter({ case vrd => vrd.name == gfun.p.name })
-    VarRuleDef(name, null)
-  }
-
-  def isMatched(pat: Pat, vs: VarSet, variableRulesDefs: List[VarRuleDef]) = {
-    //println(variableRulesDefs)
-    //println(pat)
-    //println(vs)
-
-    val isNotMatched =
-      variableRulesDefs
-        .filter(vrd => vrd.name == vs.name)
-        .map(vrd => vrd.ctr)
-        .find({ case ctr => ctr.name == pat.name })
-        .isEmpty
-    !isNotMatched
-  }
-
-  def drop(vs: VarSet, p: Pat, variableRulesDefs: List[VarRuleDef]): Tuple2[VarSet, List[VarRuleDef]] = {
-    //println(variableRulesDefs)
-    //println(vs)
-    //println(p)
-
-    val n = getNewNameOfVarRule
-    val vs_r = VarSet(n)
-
-    if (p.args.isEmpty) return (vs_r, List())
-
-    val vrds_r = variableRulesDefs
-      .filter(vrd => vrd.name == vs.name)
-      //.filter(vrd => vrd.ctr.name == p.name)
-      .map(vrd => vrd.ctr match {
-        case ctr @ Ctr(name, List((vs1: VarSet))) if (name == p.name) =>
-          Some(VarRuleDef(n, Ctr(name, List(vs_r))))
-        case ctr @ Ctr(name, (c: Ctr) :: List()) =>
-          if (name == p.name) Some(VarRuleDef(n, c))
-          else Some(VarRuleDef(n, Ctr(name, List(c))))
-        case ctr @ Ctr(name, List()) =>
-          Some(VarRuleDef(n, Ctr(p.name, List(ctr))))
-      })
-      .map(x => x.get)
-    //println(vrds_r)
-    (vs_r, vrds_r)
-  }
-
-  def replace(e: Term, subst: Map[Var, Term]): Term = e match {
-    case v: Var => subst.getOrElse(v, v)
-    case c: Ctr => Ctr(c.name, c.args.map(x => replace(x, subst)))
-    case gc: GCall => GCall(gc.name, gc.args.map(x => replace(x, subst)))
+object Analyser {
+  def getEmptyMapWithTermsOrdering(): Map[Name, SortedSet[Term]] = {
+    val term_ordering = Ordering.fromLessThan[Term]((x, y) => x.toString < y.toString)
+    val empty_map = Map[Name, SortedSet[Term]]().withDefaultValue(SortedSet.empty(term_ordering))
+    empty_map
   }
 
   def isGCall(t: Term) = t match {
     case GCall(_, _) => true
-    case v => false
+    case Ctr(_, _) => false
+    case Name(_) => false
   }
 
-  //def toVarSets(terms: List[Term], vss: List[VarSet], vrds: List[VarRuleDef]): Tuple2[List[VarSet], List[VarRuleDef]] = {
-  def toVarSets(terms: List[Term]): Tuple2[List[VarSet], List[VarRuleDef]] = {
-    if (terms.isEmpty)
-      return (List(), List())
+  def isCtr(t: Term) = t match {
+    case GCall(_, _) => false
+    case Ctr(_, _) => true
+    case Name(_) => false
+  }
 
-    val (vss1, vrds1) = terms.head match {
-      case c @ Ctr(name, List()) =>
-        val n = getNewNameOfVarRule
-        val vs = VarSet(n)
-        val vrd = VarRuleDef(n, c)
-        (List(vs), List(vrd))
-      case Ctr(name, args) =>
-        val (vss, vrds) = toVarSets(args)
-        val vrds1 = vrds.map(vrd => VarRuleDef(vrd.name, Ctr(name, List(vrd.ctr))))
-        (vss, vrds1)
-      case (vs: VarSet) => (List(vs), List())
-      case (v: Var) =>
-        val vs = VarSet(getNewNameOfVarRule)
-        (List(vs), List())
+  def isName(t: Term) = t match {
+    case GCall(_, _) => false
+    case Ctr(_, _) => false
+    case Name(_) => true
+  }
+
+  def matchOfCtr(pat: Pat, ctr: Ctr, tg: TreeGrammar): Option[Map[Var, Term]] = {
+    if (ctr.name != pat.name) return None
+    if (ctr.args.length != pat.args.length) return None
+    val vars_map_list = pat.args zip ctr.args
+    val vars_map = (vars_map_list :\ Map[Var, Term]()) { case ((v, t), m) => m + (v -> t) }
+    Some(vars_map)
+  }
+
+  def matchAgainstPat1(pat: Pat, currentNs: List[Name], tg: TreeGrammar, visitedNs: Set[Name]): List[Map[Var, Term]] = {
+    val prods = currentNs.flatMap(n => tg.getProductions(n)).filter(!isGCall(_))
+    val prods_good_ctrs =
+      prods
+        .filter(isCtr(_))
+        .map({ case (ctr: Ctr) => matchOfCtr(pat, ctr, tg) })
+        .filter(!_.isEmpty)
+        .map(_.get)
+    if (!prods_good_ctrs.isEmpty)
+      return prods_good_ctrs
+
+    val prods_names =
+      prods
+        .filter(isName(_))
+        .map({ case (n: Name) => n })
+        .filter(n => !visitedNs.contains(n))
+
+    if (prods_names.isEmpty)
+      return Nil
+
+    matchAgainstPat1(pat, prods_names, tg, visitedNs ++ currentNs ++ prods_names)
+  }
+
+  def matchAgainstPat(pat: Pat, t: Term, tg: TreeGrammar): List[Map[Var, Term]] = t match {
+    case GCall(_, _) => Nil
+    case ctr @ Ctr(name, args) => matchOfCtr(pat, ctr, tg) match {
+      case Some(x) => List(x)
+      case None => Nil
     }
+    case n @ Name(name) => matchAgainstPat1(pat, List(n), tg, Set(n))
+  }
+}
 
-    val (vss2, vrds2) = toVarSets(terms.tail)
-    (vss1 ::: vss2, vrds1 ::: vrds2)
+class Analyser(prog: ProgramMarked) {
+  def namesOfTerm(t: Term): Set[Name] = t match {
+    case GCall(_, args) => (args :\ Set[Name]()) { case (t, s) => s ++ namesOfTerm(t) }
+    case Ctr(_, args) => (args :\ Set[Name]()) { case (t, s) => s ++ namesOfTerm(t) }
+    case n @ Name(_) => Set(n)
   }
 
-  def eqTerms(t1: Term, t2: Term): Boolean = {
-    (t1, t2) match {
-      case (GCall(name1, args1), GCall(name2, args2)) =>
-        name1 == name2 && ((args1 zip args2).forall(x => eqTerms(x._1, x._2)))
-      case (Ctr(name1, args1), Ctr(name2, args2)) => name1 == name2
-      case (v1: Var, v2: Var) => true
-      case (vs1: VarSet, vs2: VarSet) => true
-      case (vs: VarSet, v: Var) => true
-      case (v: Var, vs: VarSet) => true
-      case _ => false
-    }
+  def cartesianProduct(lists: List[Set[Term]]): List[List[Term]] = lists match {
+    case Nil => List()
+    case s :: Nil => s.toList.map(x => List(x))
+    case s :: ls => s.toList.flatMap(x => cartesianProduct(ls).map(y => x :: y))
   }
 
-  def analyze(rulesToProcess: Stack[Rule], variableRulesDefs: List[VarRuleDef], readyRules: List[Rule]): Tuple2[List[Rule], List[VarRuleDef]] = {
-    if (rulesToProcess.isEmpty)
-      return (readyRules, variableRulesDefs)
+  def transformGCalls(ruleName: RuleName, term: Term, treeGrammar: TreeGrammar): TreeGrammar = term match {
+    case (n: Name) => TreeGrammar.create()
+    case ctr @ Ctr(name, args) =>
+      val temp_r = RuleName(ruleName.name + "temp")
+      val r1 = args.map(t => (t, transformGCalls(temp_r, t, treeGrammar)))
+      val r1_debug = r1.map(_._2)
 
-    val currentRule = rulesToProcess.top
+      if (r1.forall({ case (_, tg) => tg.getProductions(temp_r).isEmpty })) {
+        return TreeGrammar.create()
+      }
 
-    currentRule.term match {
-      case GCall(name, (vs: VarSet) :: rest) =>
-        val vrs =
-          prog
-            .gs(name)
-            .filter(gfun => isMatched(gfun.p, vs, variableRulesDefs))
-            .map(gfun => {
-              //println(gfun)
-              //println(currentRule)
-              val (vs1, vrds1) = drop(vs, gfun.p, variableRulesDefs)
-              val (vss, vrds2) = toVarSets(rest)
-              val subst_list = (gfun.p.args zip List(vs1)) ::: (gfun.args zip vss)
-              val subst = (subst_list :\ Map[Var, Term]()) { case ((v, t), m) => m + (v -> t) }
-              val r = Rule(getNewNameOfRule, replace(gfun.term, subst))
-              (r, vrds1 ::: vrds2)
-            })
+      val r2 = r1.map({ case (t, tg) => val prods = tg.getProductions(temp_r); if (prods.isEmpty) (prods + t) else prods })
+      val cp = cartesianProduct(r2)
+      val ctrs = cp.map(x => Ctr(name, x))
+      val treeGrammar1 = (r1 :\ TreeGrammar.create()) { case ((_, tg), tg_r) => tg_r.mergeGrammar(tg.removeRule(temp_r)) }
+      val treeGrammar2 = (ctrs :\ treeGrammar1) { case (c, tg) => tg.addRule(ruleName, c) }
 
-        val readyRules1 = readyRules :::
-          vrs.map(t2 => Rule(currentRule.name, RuleName(t2._1.name))) :::
-          vrs.map(t2 => t2._1).filter(r => !isGCall(r.term))
-        val rulesToProcess1_list =
-          vrs
-            .map(vr => vr._1)
-            .filter(r => isGCall(r.term))
-            .map(r => (r, (currentRule :: readyRules1).find(r1 => eqTerms(r.term, r1.term)).isEmpty))
-        val rulesToProcess1 = (rulesToProcess1_list.filter(x => x._2).map(x => x._1) :\ rulesToProcess.pop) { case (v, s) => s.push(v) }
-        val variableRulesDefs1 = variableRulesDefs ::: vrs.flatMap(vr => vr._2)
-        val readyRules2 = readyRules1 :::
-          rulesToProcess1_list
-          .filter(x => !x._2)
-          .map(x => {
-            val r = (currentRule :: readyRules1).find(r1 => eqTerms(x._1.term, r1.term)).get
-            Rule(x._1.name, RuleName(r.name))
+      //println("Ctr: " + ctr)
+      //println("ctrs:\n" + ctrs.mkString("\n-----\n"))
+      //println("treeGrammar1:\n" + treeGrammar1)
+      //println("treeGrammar2:\n" + treeGrammar2)
+
+      treeGrammar2
+    case GCall(name, args) =>
+      val matched_rs =
+        prog
+          .calls
+          .filter(gfm => gfm.gfun.name == name)
+          .filter(gfm => gfm.gfun.args.length == args.length - 1)
+          .map(gfm => (gfm, matchAgainstPat(gfm.gfun.p, args.head, treeGrammar)))
+          .filter(!_._2.isEmpty)
+          .map({
+            case (gfm, subst_pat) =>
+              val subst_full = subst_pat.map(s => ((gfm.gfun.args zip args.tail) :\ s) { case ((v, t), m) => m + (v -> t) })
+              val names_of_term = namesOfTerm(gfm.gfun.term)
+              val subst = subst_full.map(_.filter({ case (v, t) => names_of_term.contains(v) }))
+              (gfm, subst)
           })
+      //println("matched_rs:\n" + matched_rs.mkString("\n"))
+      val tg_rules1: List[(RuleName, RuleName)] = matched_rs.map({ case (gfm, subst) => (ruleName, gfm.ruleName) })
+      val tg_rules2: List[(RuleName, Term)] = matched_rs.map({ case (gfm, subst) => (gfm.ruleName, gfm.gfun.term) })
+      val tg_rules3: List[(Var, Term)] = matched_rs.flatMap(_._2).flatMap(_.toList)
+      val treeGrammar1 = TreeGrammar.create().addRules(tg_rules1).addRules(tg_rules2).addRules(tg_rules3)
 
-        /*
-        println(rulesToProcess1)
-        println(variableRulesDefs1)
-        println(readyRules2)
+      // ToDo: Remove repeated code. Same code is in Ctr-case. 
+      val temp_r = RuleName(ruleName.name + "temp")
+      val r1 = args.map(t => (t, transformGCalls(temp_r, t, treeGrammar)))
+      if (r1.forall({ case (_, tg) => tg.getProductions(temp_r).isEmpty })) {
+        return treeGrammar1
+      } else {
+        //println(tg_rules1.mkString("\n"))
+        //println(tg_rules2.mkString("\n"))
+        //println(treeGrammar2)
+        val r2 = r1.map({ case (t, tg) => val prods = tg.getProductions(temp_r); if (prods.isEmpty) (prods + t) else prods })
+        val cp = cartesianProduct(r2)
+        val gcalls = cp.map(x => GCall(name, x))
+        val treeGrammar2 = (r1 :\ TreeGrammar.create()) { case ((_, tg), tg_r) => tg_r.mergeGrammar(tg.removeRule(temp_r)) }
+        val treeGrammar3 = (gcalls :\ treeGrammar2) { case (gc, tg) => tg.addRule(ruleName, gc) }
+        return treeGrammar3
+      }
+  }
 
-        println()
-        */
+  def extP(treeGrammar: TreeGrammar): TreeGrammar = {
+    val treeGrammars_r = treeGrammar.listOfRRules.map({ case ((rn: RuleName), (t: Term)) => transformGCalls(rn, t, treeGrammar) })
+    val treeGrammar_r = (treeGrammars_r :\ TreeGrammar.create()) { case (tg, tg_r) => tg_r.mergeGrammar(tg) }
 
-        analyze(rulesToProcess1, variableRulesDefs1, readyRules2)
-    }
+    //println(r.mkString("\n-----\n"))
+    //println(treeGrammar)
+    //println(treeGrammar_r)
+    //println("----------------------------")
+
+    val treeGrammar_new = treeGrammar.mergeGrammar(treeGrammar_r)
+    if (treeGrammar_new.isEqual(treeGrammar)) return treeGrammar
+    else return extP(treeGrammar_new)
   }
 }

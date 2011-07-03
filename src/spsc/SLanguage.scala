@@ -2,8 +2,7 @@ package spsc
 
 abstract class Term
 
-case class Var(name: String) extends Term {
-  override def toString = name
+case class Var(varName: String) extends Name(varName) {
 }
 
 case class Ctr(name: String, args: List[Term]) extends Term {
@@ -38,19 +37,23 @@ case class Program(defs: List[Def]) {
 }
 
 // -----------------------------
+/*
 case class VarSet(name: String) extends Term {
   override def toString = name
 }
 
-//case class VarRuleDef(override val name: String, ctr: Ctr) extends Rule(name, ctr) {
 case class VarRuleDef(name: String, ctr: Ctr) {
   override def toString = name + " = " + ctr + ";"
 }
+*/
 
-case class Rule(name: String, term: Term) {
-  override def toString = name + " = " + term + ";"
+case class Name(name: String) extends Term {
+  override def toString = name
 }
 
-case class RuleName(name: String) extends Term {
-  override def toString = name
+case class Rule(name: Name, term: Term) {
+  override def toString = name + " -> " + term + ";"
+}
+
+case class RuleName(ruleName: String) extends Name(ruleName) {
 }
