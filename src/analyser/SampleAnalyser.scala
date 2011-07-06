@@ -235,10 +235,10 @@ g -> Z();
     //run(program4, treeGrammar4_5)
     //run(program5, treeGrammar5_0)
     //run(program5, treeGrammar5_1)
-    //run(program5, treeGrammar5_2)
+    run(program5, treeGrammar5_2)
     //run(program5, treeGrammar5_3)
     
-    reachability()
+    //reachability()
   }
 
   def reachability() = {

@@ -128,8 +128,7 @@ object TreeGrammar {
     }
 
     def clean(tg: TreeGrammar): TreeGrammar = {
-      val tg1 = eraseLoops(tg)
-      tg1
+      eraseTransitiveRules(tg)
     }
   }
 }
