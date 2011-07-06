@@ -45,10 +45,7 @@ case class TreeGrammar(rules: Map[Name, SortedSet[Term]]) {
 }
 
 object TreeGrammar {
-  def create(): TreeGrammar = {
-    val empty_map = Analyser.getEmptyMapWithTermsOrdering()
-    TreeGrammar(empty_map)
-  }
+  def create(): TreeGrammar = TreeGrammar(Analyser.getEmptyMapWithTermsOrdering())
 
   def create(rules: List[(Name, List[Term])]): TreeGrammar =
     (rules :\ TreeGrammar.create()) { case ((v, ts), tg) => TreeGrammar.addRules(v, ts, tg) }
@@ -75,4 +72,64 @@ object TreeGrammar {
     TreeGrammar(rules)
   }
 
+  object Cleaner {
+    private def hasGCall(term: Term): Boolean = term match {
+      case Ctr(_, args) => !args.find(t => hasGCall(t)).isEmpty
+      case Name(_) => false
+      case GCall(_, _) => true
+    }
+
+    /*
+    def eraseGFuns(tg: TreeGrammar): TreeGrammar = {
+      val rules = tg.rules.map({ case (n, ts) => (n -> (ts.filter(x => !hasGCall(x)))) })
+      TreeGrammar(rules)
+    }
+    */
+
+    def eraseLoops(tg: TreeGrammar): TreeGrammar = {
+      // http://en.wikipedia.org/wiki/Loop_%28graph_theory%29
+      val rules =
+        tg
+          .rules
+          .map({ case (n, ts) => (n -> (ts.filter(x => n != x).toList)) })
+          .toList
+      TreeGrammar.create(rules)
+    }
+
+    def eraseTransitiveRules(tg: TreeGrammar): TreeGrammar = {
+      def replaceTerm(inputTerm: Term, nameToReplaceFrom: Name, nameToReplaceTo: Name): Term = {
+        inputTerm match {
+          case GCall(name, args) => GCall(name, args.map(arg => replaceTerm(arg, nameToReplaceFrom, nameToReplaceTo)))
+          case Ctr(name, args) => Ctr(name, args.map(arg => replaceTerm(arg, nameToReplaceFrom, nameToReplaceTo)))
+          case r @ Name(name) => if (name == nameToReplaceFrom.name) nameToReplaceTo else r
+        }
+      }
+
+      //println(tg)
+
+      val rule_for_remove = tg.rules.find({ case (r, ts) => ts.size == 1 && ts.head.isInstanceOf[Name] && r.name != "R0" })
+      rule_for_remove match {
+        case None => tg
+        case Some((rule_to_remove, set_of_terms)) =>
+          val rule_substitute = tg.rules(rule_to_remove).head.asInstanceOf[Name]
+          val rules =
+            tg
+              .removeRule(rule_to_remove)
+              .rules.map({
+                case (rn, ts) =>
+                  //val ts_new = ts.empty ++ ts.map(x => replaceTerm(x, rule_to_remove, rule_substitute))
+                  val ts_new = ts.map(x => replaceTerm(x, rule_to_remove, rule_substitute)).toList
+                  (rn, ts_new)
+              })
+              .toList
+          val tg_new = eraseLoops(TreeGrammar.create(rules))
+          eraseTransitiveRules(tg_new)
+      }
+    }
+
+    def clean(tg: TreeGrammar): TreeGrammar = {
+      val tg1 = eraseLoops(tg)
+      tg1
+    }
+  }
 }

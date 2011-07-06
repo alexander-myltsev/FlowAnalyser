@@ -139,7 +139,49 @@ y2 -> Z();
   }
 
   @Test
-  def FlowAnalyzer_Match_test1(): Unit = {
+  def TreeGrammar_Cleaner_test1(): Unit = {
+    val tgs1 = """
+R0 -> R1;
+R1 -> R2;
+R2 -> R3;
+"""
+    val tgs2 = """
+R0 -> R3;
+"""
+
+    val tg1 = TreeGrammar.Cleaner.eraseTransitiveRules(SParsers.parseTreeGrammar(tgs1))
+    val tg2 = SParsers.parseTreeGrammar(tgs2)
+    //println(tg1)
+
+    assertEquals(tg1, tg2)
+  }
+
+  @Test
+  def TreeGrammar_Cleaner_test2(): Unit = {
+    val tgs1 = """
+R0 -> R1;
+R1 -> R2;
+R1 -> R3;
+R3 -> R4;
+R4 -> R5;
+"""
+
+    val tgs2 = """
+R0 -> R1;
+R1 -> R2;
+R1 -> R5;
+"""
+
+    val tg1 = TreeGrammar.Cleaner.eraseTransitiveRules(SParsers.parseTreeGrammar(tgs1))
+    val tg2 = SParsers.parseTreeGrammar(tgs2)
+    //println(tg1)
+    //println(tg2)
+
+    assertEquals(tg1, tg2)
+  }
+
+  @Test
+  def FlowAnalyser_Match_test1(): Unit = {
     val tgs = """
 x1 -> S(Z());
 x1 -> S(S(x1));
@@ -152,7 +194,7 @@ x1 -> S(S(x1));
   }
 
   @Test
-  def FlowAnalyzer_Match_test2(): Unit = {
+  def FlowAnalyser_Match_test2(): Unit = {
     val tgs = """
 x1 -> g;
 g -> S(S(g));
@@ -165,7 +207,7 @@ g -> Z();
   }
 
   @Test
-  def FlowAnalyzer_Match_test3(): Unit = {
+  def FlowAnalyser_Match_test3(): Unit = {
     val tgs = """
 R1 -> gEven(x2);
 R1 -> S(S(Z()));
@@ -180,7 +222,7 @@ R1 -> S(S(x2));
   }
 
   @Test
-  def FlowAnalyzer_Match_test4(): Unit = {
+  def FlowAnalyser_Match_test4(): Unit = {
     val tgs = """
 R1 -> gEven(x2);
 R1 -> Cons(Cons(A(),Nil()),Nil());
@@ -194,7 +236,7 @@ R1 -> Nil();
   }
 
   @Test
-  def FlowAnalyzer_Match_test5(): Unit = {
+  def FlowAnalyser_Match_test5(): Unit = {
     val tgs = """
 R1 -> gEven(x2);
 R1 -> R2;
@@ -211,7 +253,7 @@ g -> S(Z());
   }
 
   @Test
-  def FlowAnalyzer_Match_test6(): Unit = {
+  def FlowAnalyser_Match_test6(): Unit = {
     val tgs = """
 R1 -> gEven(x2);
 R1 -> S(S(Z()));
@@ -228,7 +270,7 @@ x2 -> S(A());
   }
 
   @Test
-  def FlowAnalyzer_Match_test7(): Unit = {
+  def FlowAnalyser_Match_test7(): Unit = {
     val tgs = """
 R1 -> gEven(x2);
 R1 -> Cons(Cons(A(),Nil()),Nil());
@@ -244,7 +286,7 @@ x2 -> Cons(x3,x4);
   }
 
   @Test
-  def FlowAnalyzer_Match_test8(): Unit = {
+  def FlowAnalyser_Match_test8(): Unit = {
     val tgs = """
 R1 -> R2;
 R2 -> x2;
@@ -257,21 +299,21 @@ x2 -> Z();
   }
 
   @Test
-  def FlowAnalyzer_Match_test9(): Unit = {
+  def FlowAnalyser_Match_test9(): Unit = {
     var r = Analyser.matchAgainstPat(pP("S(x)"), pT("S(S(S(Z())))"), TreeGrammar.create())
     //println(r)
     assertEquals(r.toString, "List(Map(x -> S(S(Z()))))")
   }
 
   @Test
-  def FlowAnalyzer_Match_test10(): Unit = {
+  def FlowAnalyser_Match_test10(): Unit = {
     var r = Analyser.matchAgainstPat(pP("S(x)"), pT("A(Z())"), TreeGrammar.create())
     //println(r)
     assertEquals(r.toString, "List()")
   }
 
   @Test
-  def FlowAnalyzer_Match_test11(): Unit = {
+  def FlowAnalyser_Match_test11(): Unit = {
     val tgs = """
 R0 -> gOdd(gAdd(R5, S(Z()))); 
 R0 -> gOdd(gAdd(R6, S(Z()))); 
@@ -286,5 +328,25 @@ x6 -> g;
     val r = Analyser.matchAgainstPat(pP("S(x)"), RuleName("R6"), SParsers.parseTreeGrammar(tgs))
     //println(r)
     assertEquals(r.toString, "List(Map(x -> S(gDouble(x6))))")
+  }
+
+  def FlowAnalyser_Match_test12(): Unit = {
+    val tgs = """
+R0 -> R1;
+R0 -> R2;
+R1 -> R2;
+R2 -> x2;
+x2 -> True();
+"""
+
+    def pP(s: String) = SParsers.parsePat(s)
+
+    //val tg = TreeGrammar.Cleaner.eraseTransitiveRules(SParsers.parseTreeGrammar(tgs))
+    val tg = SParsers.parseTreeGrammar(tgs)
+    val f1 = Analyser.isReachable(pP("False()"), RuleName("R0"), tg)
+    val f2 = Analyser.isReachable(pP("True()"), RuleName("R0"), tg)
+    //println(f)
+    assertFalse(f1)
+    assertTrue(f2)
   }
 }

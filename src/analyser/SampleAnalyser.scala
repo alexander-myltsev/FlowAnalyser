@@ -209,6 +209,11 @@ R0 -> gEven(gAdd(gAdd(gDouble(g), S(Z())), S(Z())));
 g -> S(g);
 g -> Z();
 """
+  val treeGrammar5_3 = """
+R0 -> gEven(gDouble(g));
+g -> S(g);
+g -> Z();
+"""
 
   def main(args: Array[String]): Unit = {
     //run(program0, treeGrammar0_1)
@@ -230,7 +235,30 @@ g -> Z();
     //run(program4, treeGrammar4_5)
     //run(program5, treeGrammar5_0)
     //run(program5, treeGrammar5_1)
-    run(program5, treeGrammar5_2)
+    //run(program5, treeGrammar5_2)
+    //run(program5, treeGrammar5_3)
+    
+    reachability()
+  }
+
+  def reachability() = {
+    val tgs = """
+R0 -> R1;
+R0 -> R2;
+R1 -> R2;
+R2 -> x2;
+x2 -> True();
+"""
+
+    def pP(s: String) = SParsers.parsePat(s)
+
+    val tg = TreeGrammar.Cleaner.eraseTransitiveRules(SParsers.parseTreeGrammar(tgs))
+    //val tg = SParsers.parseTreeGrammar(tgs)
+    val f1 = Analyser.isReachable(pP("False()"), RuleName("R0"), tg)
+    val f2 = Analyser.isReachable(pP("True()"), RuleName("R0"), tg)
+    
+    println(f1)
+    println(f2)
   }
 
   def run(programText: String, treeGrammarText: String) = {
@@ -243,7 +271,8 @@ g -> Z();
     println("----------------------")
     println("Initial " + initialTreeGrammar)
     println("----------------------")
-    println("Approximated " + approximatedTreeGrammar)
+    //println("Approximated " + approximatedTreeGrammar)
+    println("Approximated " + TreeGrammar.Cleaner.clean(approximatedTreeGrammar))
     println("======================")
   }
 }

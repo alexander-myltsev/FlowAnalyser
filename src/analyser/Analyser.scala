@@ -38,37 +38,42 @@ object Analyser {
     Some(vars_map)
   }
 
-  def matchAgainstPat1(pat: Pat, currentNs: List[Name], tg: TreeGrammar, visitedNs: Set[Name]): List[Map[Var, Term]] = {
-    val prods = currentNs.flatMap(n => tg.getProductions(n)).filter(!isGCall(_))
-    val prods_good_ctrs =
-      prods
-        .filter(isCtr(_))
-        .map({ case (ctr: Ctr) => matchOfCtr(pat, ctr, tg) })
-        .filter(!_.isEmpty)
-        .map(_.get)
-    if (!prods_good_ctrs.isEmpty)
-      return prods_good_ctrs
+  def matchAgainstPat(pat: Pat, t: Term, tg: TreeGrammar): List[Map[Var, Term]] = {
+    def matchAgainstPat1(pat: Pat, currentNs: List[Name], tg: TreeGrammar, visitedNs: Set[Name]): List[Map[Var, Term]] = {
+      val prods = currentNs.flatMap(n => tg.getProductions(n)).filter(!isGCall(_))
+      val prods_good_ctrs =
+        prods
+          .filter(isCtr(_))
+          .map({ case (ctr: Ctr) => matchOfCtr(pat, ctr, tg) })
+          .filter(!_.isEmpty)
+          .map(_.get)
+      if (!prods_good_ctrs.isEmpty)
+        return prods_good_ctrs
 
-    val prods_names =
-      prods
-        .filter(isName(_))
-        .map({ case (n: Name) => n })
-        .filter(n => !visitedNs.contains(n))
+      val prods_names =
+        prods
+          .filter(isName(_))
+          .map({ case (n: Name) => n })
+          .filter(n => !visitedNs.contains(n))
 
-    if (prods_names.isEmpty)
-      return Nil
+      if (prods_names.isEmpty)
+        return Nil
 
-    matchAgainstPat1(pat, prods_names, tg, visitedNs ++ currentNs ++ prods_names)
-  }
-
-  def matchAgainstPat(pat: Pat, t: Term, tg: TreeGrammar): List[Map[Var, Term]] = t match {
-    case GCall(_, _) => Nil
-    case ctr @ Ctr(name, args) => matchOfCtr(pat, ctr, tg) match {
-      case Some(x) => List(x)
-      case None => Nil
+      matchAgainstPat1(pat, prods_names, tg, visitedNs ++ currentNs ++ prods_names)
     }
-    case n @ Name(name) => matchAgainstPat1(pat, List(n), tg, Set(n))
+
+    t match {
+      case GCall(_, _) => Nil
+      case ctr @ Ctr(name, args) => matchOfCtr(pat, ctr, tg) match {
+        case Some(x) => List(x)
+        case None => Nil
+      }
+      case n @ Name(name) => matchAgainstPat1(pat, List(n), tg, Set(n))
+    }
   }
+
+  def isReachable(pat: Pat, rn: RuleName, tg: TreeGrammar): Boolean =
+    matchAgainstPat(pat, rn, tg) != Nil
 }
 
 class Analyser(prog: ProgramMarked) {
